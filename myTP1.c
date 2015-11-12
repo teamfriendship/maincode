@@ -3,8 +3,18 @@
 
 #define TOTALFORK 10
 
+#define READY 0
+#define WAIT 1
+
+typedef struct Process{
+	pid_t pid;
+	int cpu_time;
+	int io_time;
+	int state;
+} Proc;
+
 typedef struct Node{
-	pid_t item;
+	Proc item;
 	struct Node* next;
 } Node;
 
@@ -12,7 +22,7 @@ typedef struct Queue{
 	Node* head;
 	Node* tail;
 
-	void (*push) (struct Queue*, pid_t);
+	void (*enqueue) (struct Queue*, Proc*);
 	//void (*pop) (struct Queue*);
 	//void (*peek) (struct Queue*);
  	//void (*display) (struct Queue*);
@@ -20,23 +30,35 @@ typedef struct Queue{
 	int size;
 } Queue;
 
-void push(Queue* queue, pid_t pid);
+Proc* initProc(pid_t newPid){
+	Proc* newProc = (Proc*)malloc(sizeof(Proc));
+	newProc->pid = newPid;
+	newProc->cpu_time = rand()%50;
+	newProc->io_time = rand()%3;
+	newProc->state = READY;
+	return newProc;
+}
+
+
+void enqueue(Queue* queue, Proc* newItem);
 
 Queue createQueue(){
 	Queue queue;
 	queue.size = 0;
 	queue.head = NULL;
 	queue.tail = NULL;
-	queue.push = &push;
+	queue.enqueue = &enqueue;
 	//queue.pop = &pop;
 	//queue.peek = &peek;
 	//queue.display = &display;
 	return queue;
 }
 
-void push(Queue* queue, pid_t item){
+void enqueue(Queue* queue, Proc* newItem){
 	Node* n = (Node*)malloc(sizeof(Node));
-	n->item = item;
+	n->item.pid = newItem->pid;
+	n->item.cpu_time = newItem->cpu_time;
+	n->item.io_time = newItem->io_time;
 	n->next = NULL;
 
 	if(queue->head == NULL){
@@ -55,7 +77,7 @@ void printQueue(Queue* queue)
 	Node* q = (Node*)malloc(sizeof(Node));
 	q = queue->head;
 
-	for(j=0; j < queue->size; j++, q = q->next)  printf("%d ", q->item);
+	for(j=0; j < queue->size; j++, q = q->next)  printf("%d ", q->item.pid);
         printf("\n");
 }
 
@@ -72,7 +94,9 @@ int main(int argc, char* argv){
 	while(runProcess < TOTALFORK){
 		//pids[runProcess] = fork();
 		pid = fork();
-		runQ.push(&runQ, pid);
+		Proc* process = (Proc*)malloc(sizeof(Proc));
+		process = initProc(pid);
+		runQ.enqueue(&runQ, process);
 		printQueue(&runQ);
 		printf("\n");
 
