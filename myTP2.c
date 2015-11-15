@@ -131,28 +131,13 @@ int main(){
 	Queue* waitQ = createQueue();
 	Queue* retireQ = createQueue();	
 	
-	//sisgaction
-	struct sigaction act;
-
-	sigemptyset(&act.sa_mask);
-	sigaddset(&act.sa_mask, SIGQUIT);
-
-	act.sa_flags = 0;
-	act.sa_handler = sig_handler;
-
-	if(sigaction(SIGINT, &act, (struct sigaction*)NULL) < 0){
-		perror("SIGACTION");
-		exit(1);
-	}
-	
-
 	//setitimer var
 	struct sigaction sa;
 	struct itimerval timer;
 	
 	//Install timer_handler as the signal handler for SIGVTALRM
 	memset(&sa, 0, sizeof(sa));
-	sa.sa_handler = &timer_handler;
+	sa.sa_handler = &sig_handler;
 	sigaction(SIGVTALRM, &sa, NULL);
 
 	//Configure the timer to expire after 250msec
@@ -200,10 +185,10 @@ int main(){
 			}
 
 			
-		        act.sa_flags = 0;
-   			act.sa_handler = sig_handler;
+		        sa.sa_flags = 0;
+   			sa.sa_handler = sig_handler;
 
-		        if(sigaction(SIGINT, &act, (struct sigaction*)NULL) < 0){
+		        if(sigaction(SIGINT, &sa, (struct sigaction*)NULL) < 0){
 		                perror("SIGACTION");
       			        exit(1);
         		
