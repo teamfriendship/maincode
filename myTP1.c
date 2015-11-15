@@ -1,10 +1,15 @@
-#include<stdio.h>
-#include<stdlib.h>
+#include <stdio.h>
+#include <stdlib.h>
 
+#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/msg.h>
+#include <sys/stat.h>
+`
 #define TOTALFORK 10
-
 #define READY 0
 #define WAIT 1
+#define QUANTUM 20
 
 typedef struct Process{
 	pid_t pid;
@@ -38,7 +43,6 @@ Proc* initProc(pid_t newPid){
 	newProc->state = READY;
 	return newProc;
 }
-
 
 void enqueue(Queue* queue, Proc* newItem);
 
@@ -81,9 +85,25 @@ void printQueue(Queue* queue)
         printf("\n");
 }
 
-int main(int argc, char* argv){
+typedef struct msgbuf{
+	long msg_type;
+	char msg_text;
+	int seq;
+} msg_buf;
 
-	//pid_t pids[TOTALFORK];
+int main(int argc, char* argv){
+	
+	key_t key_id;
+	int i;
+	msg_buf mybuf, rcvbuf;
+
+	key_id = msgget((key_t)1234, IPC_CREAT|0666);
+	
+	if(key_id == -1){
+		perror("msgget error");
+		exit(0);
+	}
+
 	int runProcess = 0;
 	pid_t pid;
 
@@ -92,7 +112,6 @@ int main(int argc, char* argv){
 	Queue retireQ = createQueue();
 
 	while(runProcess < TOTALFORK){
-		//pids[runProcess] = fork();
 		pid = fork();
 		Proc* process = (Proc*)malloc(sizeof(Proc));
 		process = initProc(pid);
