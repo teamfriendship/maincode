@@ -3,6 +3,12 @@
 
 #define TOTALFORK 3
 
+typedef struct p_strcut{
+	pid_t cpid;
+	int cputime;
+	int iotime;
+};
+
 int main(int argc, char* argv){
 
 	pid_t pids[TOTALFORK], pid;
