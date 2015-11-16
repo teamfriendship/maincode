@@ -33,7 +33,6 @@ typedef struct{
 
 typedef struct{ 
  	long type;  	
-//	int pid; 
  	int time_quantum;
 }message;
 
@@ -102,7 +101,6 @@ int run_enqueue (QUEUE *queue, pcb* item)
         (queue->count)++;
         return 1;
 }
-
 
 pcb* dequeue (QUEUE *queue) 
 { 
@@ -177,9 +175,7 @@ void time_tick(int signo)
 	kill(getpid(), SIGKILL);
 	}
 	else
-	{
-		schedule();
-		
+	{		
 		if(!emptyQueue(retired_q))
         	{
                 	do_io();
@@ -188,12 +184,15 @@ void time_tick(int signo)
 		{
 			printf("IO retired_q is empty\n");
 		}
+		schedule();
 	} 
 } 
 
 void do_cpu(int cpu_quantum)
 {
+	int ret;
 	message msg;
+
 	if((run_q->front->data->remaining_cpu_time)>cpu_quantum)
 	{
 		(run_q->front->data->turn)++;
@@ -209,10 +208,14 @@ void do_cpu(int cpu_quantum)
 		(run_q->front->data->remaining_cpu_time)+=((run_q->front->data->turn)*cpu_quantum);
 		run_q->front->data->turn=1;
 		(run_q->front->data->state)=WAIT;
-		enqueue(retired_q, dequeue(run_q));
 		msg.type = (run_q->front->data->pid);
 		msg.time_quantum = (run_q->front->data->remaining_io_time);
-		msgsnd(*msgq_id,&msg,sizeof(msg),IPC_NOWAIT);
+		ret = msgsnd(*msgq_id,&msg,(sizeof(msg)-sizeof(long)),IPC_NOWAIT);
+		if(ret == -1)
+		{
+			perror("msgsnd() Fail");
+		}
+		enqueue(retired_q, dequeue(run_q));
 	}
 }
 
@@ -220,9 +223,10 @@ void do_io()
 {
 	int ret;
 	int q_count=0;
-	pcb *current;
-	current=(pcb*)malloc(sizeof(pcb));
-	current = (retired_q->front->data);
+	QUEUE_NODE *io_point;
+	QUEUE_NODE *B_point;
+	io_point=(retired_q->front);
+	B_point=(retired_q->front);
 	message msg;
 		
 	ret = msgget(MY_MSGQ_KEY, IPC_CREAT | 0644);
@@ -235,28 +239,42 @@ void do_io()
                 *msgq_id = ret;
                 printf("msgq (key:0x%x, id:0x%x) created.\n", MY_MSGQ_KEY, ret);
         }
-/*
+
 	for(q_count=0;q_count<queueCount(retired_q);q_count++)
 	{
-		if((current->remaining_io_time)>0)
+
+		if((io_point->data->remaining_io_time)>0)
 		{
-			(current->remaining_io_time)--;
-			current = retired_q->front->next->data;
+			(io_point->data->remaining_io_time)--;
+			
+			if(queueCount(retired_q)>1)
+				io_point = io_point->next;
+		}
+	}
+
+	 for(q_count=0;q_count<queueCount(retired_q);q_count++)
+        {
+		io_point = retired_q->front;
+		if(io_point->data->remaining_io_time>0)
+		{
+			enqueue(retired_q, dequeue(retired_q));
 		}
 		else
 		{
-			if(ret = msgrcv(*msgq_id, &msg, sizeof(msg),(retired_q->front->data->pid),IPC_NOWAIT)<0)
-		        {
-				perror("msgrcv error\n");
-				return;
-		        }
-			(current->state)=READY;
-			(current->remaining_io_time)=msg.time_quantum;
-			current = retired_q->front->next->data;
-			run_enqueue(run_q, dequeue(retired_q));
+                	if((ret = msgrcv(*msgq_id, &msg, (sizeof(msg)-sizeof(long)),(io_point->data->pid),IPC_NOWAIT))<0)
+                       	 {
+                       	         perror("msgrcv error\n");
+                       	         return;
+                       	 }
+                       	 (io_point->data->state)=READY;
+                       	 (io_point->data->remaining_io_time)=msg.time_quantum;
+       	                 run_enqueue(run_q, dequeue(retired_q));
+       	                 q_count--;
 		}
-	}
-*/
+        }
+
+
+
 }
 
 void schedule()
@@ -341,14 +359,14 @@ if(pid>0)
 		point=(run_q->front);
 		for(i=0;i<queueCount(run_q);i++)
 		{
-			printf("<%d>",point->data->pid);
+			printf("<%d:%d,%d>",(point->data->pid)%10,point->data->remaining_cpu_time,point->data->remaining_io_time);
 			point=(point->next);
 		}
 		printf("\nretired_queue : ");
 		point=(retired_q->front);
 		for(i=0;i<queueCount(retired_q);i++)
                 {
-                        printf("<%d>",point->data->pid);
+                         printf("<%d:%d,%d>",(point->data->pid)%10,point->data->remaining_cpu_time,point->data->remaining_io_time);
                         point=(point->next);
                 }
 		printf("\nTime : %d\n", global_tick);
