@@ -1,8 +1,11 @@
 #include<stdio.h>
 #include<stdlib.h>
+#include<sys/types.h>
+#include<sys/ipc.h>
+#include<sys/msg.h>
 
 #define TOTALFORK 10
-
+#define BUFF_SIZE 1024
 
 typedef struct p_struct{
         pid_t cpid;
@@ -18,6 +21,11 @@ typedef struct QUEUE{
 	struct q_node* front;
 	struct q_node* rear;
 }hnode;
+typedef struct msg_queue{
+	long mtype;
+	pid_t pid;
+	int time_quantum;
+}msg;
 
 hnode* run_q;
 hnode* retired_q;
@@ -84,7 +92,16 @@ int main(int argc, char* argv){
 
 	pid_t pids[TOTALFORK], pid;
 	int runProcess = 0;
-	int state;
+	int key_id;
+	
+	key_id = msgget((key_t)2194, IPC_CREAT|0666);
+	if(key_id == -1){
+		perror("msgget error");
+		exit(0);
+	}
+	else
+		printf("Message Queue key is %d\n", key_id);
+	
 
 	while(runProcess < TOTALFORK){
 		pids[runProcess] = fork();
