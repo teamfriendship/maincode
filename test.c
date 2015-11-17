@@ -319,13 +319,14 @@ int main (int argc, char *argv[])
         } 
  
 	for (i = 0 ; i < 10 ; i++) { 
- 		if ((pid = fork()) == 0){ 
+		pid = fork();
+ 		if (pid == 0){ 
 			//printf("child[%d]: getpid() = %d\n",i, getpid());
-			exit(0);
+			return 0;
  		} else if (pid < 0) { 
  			printf("fork failed \n"); 
  			return 0; 
- 		} else if (pid > 0) {
+ 		} else {
 			printf("parent: pid[%d] = %d\n", i, pid);
                         proc = (pcb*)malloc(sizeof(pcb));
                         memset(proc, 0, sizeof(pcb));
@@ -336,24 +337,23 @@ int main (int argc, char *argv[])
 			proc->turn = 1;
                         printf("cpu time get : %d\n" , proc->remaining_cpu_time);
                         printf("io time get : %d\n" , proc->remaining_io_time);
-                        enqueue(run_q, proc); 
+                        enqueue(run_q, proc);
  		}
 	}
 
-
-if(pid>0)
-{
  	memset(&new_sighandler, 0, sizeof(new_sighandler)); 
  	new_sighandler.sa_handler = &time_tick; 
- 	sigaction(SIGALRM, &new_sighandler, &old_sighandler); 
+ 	//sigaction(SIGALRM, &new_sighandler, &old_sighandler); 
 
  	itimer.it_interval.tv_sec = 0; 
- 	itimer.it_interval.tv_usec = 100000;
+ 	itimer.it_interval.tv_usec = 500000;
  	itimer.it_value.tv_sec = 0; 
- 	itimer.it_value.tv_usec = 100000; 
+ 	itimer.it_value.tv_usec = 500000; 
  	global_tick = 0; 
  	setitimer(ITIMER_REAL, &itimer, &old_timer);
-	while (global_tick<300) {
+	while (1) {
+	//setitimer(ITIMER_REAL, &itimer, &old_timer);
+	sigaction(SIGALRM, &new_sighandler, &old_sighandler);
 		global_tick = CPU_TIME;
 		printf("run_queue : ");
 		point=(run_q->front);
@@ -370,9 +370,9 @@ if(pid>0)
                         point=(point->next);
                 }
 		printf("\nTime : %d\n", global_tick);
-		sleep(1);
+		//sleep(1);
 	}
-}
+
 
 } 
 
