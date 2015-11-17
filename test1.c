@@ -34,7 +34,7 @@ FILE* output_file;
 int time_quantum;
 int* cpu_bust;
 int* io_bust;
-key_t* msg_id;
+//key_t* msg_id;
 
 int enqueue(hnode* queue, pid_t new_p){
         if(queue == NULL)
@@ -101,12 +101,41 @@ hnode* createQueue()
         }
         return queue;
 }
+void printqueue(hnode* queue){
+	int a = 0;
+	if(queue->total_count == 0)
+		fprintf(output_file, "empty\t\tqueue\n");
+	else{
+		node* temp = queue->front;
+		for(a = 0; a < queue->total_count; temp = temp->next)
+			fprintf(output_file, "%d -> ", temp->pid);
+		fprintf(output_file, "\n");
+	}	
+}
 
-void schedule(){
+void schedule(){ //
 	printf("schedule\n");
 	if(run_q->total_count > 0){
-		kill(run_q->front->pid, SIGALRM);
-	}
+		int ret;
+		msg rmsg;	
+		//kill(run_q->front->pid, SIGALRM);
+		if((ret = msgrcv(key_id, &rmsg, sizeof(msg),1,IPC_NOWAIT))<0)
+			printf("msgrcv error in schedule\n");   
+		else{
+			enqueue(wait_q, dequeue(run_q));
+			printf("child process(id: %d) cpu_bust finish\n", rmsg.pid);
+		}
+
+		if(time_quantum <= 0){
+			printf("time_quantum is 0\n"); 
+			enqueue(run_q, dequeue(run_q));
+
+			//fprintf(output_file, "/////run_q/////\n");
+			//printqueue(run_q);
+			//fprintf(output_file, "/////wait_q/////\n");
+			//printqueue(wait_q);
+		}
+	}			
 }
 void waitqueue(){
         if(wait_q->total_count == 0)
@@ -115,17 +144,20 @@ void waitqueue(){
                 return;
         }
         else{
-                int ret;
+                int ret, i;
                 msg rmsg;
                 node* temp = wait_q->front;
-                for(; temp->next != NULL; temp = temp->next){
+                for(i = 0; i < wait_q->total_count; temp = temp->next){
                         kill(temp->pid, SIGUSR2);
-                        if((ret = msgrcv(key_id, &rmsg, sizeof(msg),0,0))<0)
-                                printf("msgrcv error");
+                        if((ret = msgrcv(key_id, &rmsg, sizeof(msg),2,IPC_NOWAIT))<0)
+                                printf("msgrcv error in waitqueue\n");
                         else{
                                 enqueue(run_q, dequeue(wait_q));
-                                printf("child process finish");
+                                printf("child process finish\n");
                         }
+
+						if(temp->next == NULL)
+							break;
                 }
         }
 }
@@ -144,59 +176,64 @@ void time_tick()
                 kill(getpid(), SIGKILL);
                 return;
 	}
-		
+	schedule();
+	waitqueue();
 	if(time_quantum>0){
 		time_quantum--;
 		kill(run_q->front->pid, SIGUSR1);
 		printf("send signal to %d, remain time quantum: %d\n", run_q->front->pid, time_quantum);
 	}
 	else{
-		schedule();
 		time_quantum = 10;
 	}		
-	waitqueue();
+	//schedule();
 	global_time_tick++;
 }
 void use_cpu(int signo){
-	if(time_quantum > 0){
-		printf("use cpu \n");
-		(*cpu_bust)--;
-		printf("my pid: %d, cpu_bust: %d", getpid(), *cpu_bust);
-	}
-	else{
+	printf("use cpu \n");
+
+	(*cpu_bust)--;
+	printf("my pid: %d, cpu_bust: %d\n", getpid(), *cpu_bust);
+
+	if(*cpu_bust <= 0){
 		printf("finish cpu bust\n");
 		msg cmsg;
-		if((*msg_id = msgget((key_t)2194, IPC_CREAT|0666)) < 0)
-			printf("msgget error\n");
-
-		cmsg.mtype = 0;
+		//if((key_id = msgget((key_t)2194, IPC_CREAT|0666)) < 0)
+		//	printf("msgget error int use_cpu\n");
+		cmsg.mtype = 1;
 		cmsg.pid = getpid();
 		cmsg.io_time = (*io_bust);
-		msgsnd(*msg_id, &cmsg, sizeof(msg), IPC_NOWAIT);
+		msgsnd(key_id, &cmsg, sizeof(msg), IPC_NOWAIT);
+		return;
 	}
-	return;
 }
 void use_io(int signo){
 	printf("use_io\n");
+
 	(*io_bust)--;
+	printf("my pid: %d, io_bust: %d\n", getpid(), *io_bust);
+
     if((*io_bust) <= 0){
 		msg smsg;
-		smsg.mtype = 0;
+		smsg.mtype = 2;
 	    smsg.pid = getpid();
-		msgsnd(*msg_id, &smsg, sizeof(msg), IPC_NOWAIT);
+		msgsnd(key_id, &smsg, sizeof(msg), IPC_NOWAIT);
+
 		srand(time(NULL)+getpid());
-		*cpu_bust = rand() % 100;
-		*io_bust = rand() % 100;
-	}
+		*cpu_bust = rand() % 30;
+		*io_bust = rand() % 10;
+
+		return;
+	}	
 }
 
 void child_process(){
 	cpu_bust = (int*)malloc(sizeof(int));
 	io_bust = (int*)malloc(sizeof(int));
 	srand(time(NULL)+getpid());
-	*cpu_bust = rand() % 100;
-	*io_bust = rand() % 100;
-	msg_id = (key_t*)malloc(sizeof(key_t));
+	*cpu_bust = rand() % 30;
+	*io_bust = rand() % 10;
+	//msg_id = (key_t*)malloc(sizeof(key_t));
 	printf("child process id : %d, cpu_bust : %d, io_bust : %d\n", getpid(), *cpu_bust, *io_bust);
 
 	struct sigaction cpu_handler, io_handler; 
@@ -213,6 +250,7 @@ void child_process(){
 
 int main(int argc, char* argv){
 	output_file = fopen("./schedule.txt","w+");
+	fprintf(output_file, "start!!!\n");
 	run_q = createQueue();
 	wait_q = createQueue();
 
@@ -258,5 +296,6 @@ int main(int argc, char* argv){
 	while(1){
 
 	}
-        return 0;
+	fclose(output_file);
+	return 0;
 }
