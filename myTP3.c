@@ -11,9 +11,12 @@
 #include <sys/stat.h>
 
 #define TOTALFORK 10
-#define READY 0
-#define WAIT 1
 #define QUANTUM 5
+
+enum state{
+	WAIT,
+	READY
+};
 
 typedef struct Process{
 	pid_t pid;
@@ -25,7 +28,7 @@ typedef struct Process{
 Proc* createProc(pid_t newPid){
 	Proc* p = (Proc*)malloc(sizeof(Proc));
 	p->pid = newPid;
-	p->cpu_time = rand()%10;
+	p->cpu_time = rand()%10+6;
 	p->io_time = rand()%3;
 	p-> state = READY;
 	return p;
@@ -40,9 +43,6 @@ typedef struct Queue{
 	Node* head;
 	Node* tail;
 
-	void (*enqueue) (struct Queue*, Proc*);
-	Proc* (*dequeue) (struct Queue*);
-
 	int size;
 } Queue;
 
@@ -54,19 +54,20 @@ Queue* createQueue(){
 	q->size = 0;
 	q->head = NULL;
 	q->tail = NULL;
-	q->enqueue = &enqueue;
-	q->dequeue = &dequeue;
 	return q;
 }
 
 void enqueue(Queue* q, Proc* newItem){
+	
 	Node* n = (Node*)malloc(sizeof(Node));
+
 	n->item.pid = newItem->pid;
 	n->item.cpu_time = newItem->cpu_time;
 	n->item.io_time = newItem->io_time;
+	n->item.state = newItem->state;
 	n->next = NULL;
 
-	if(q->head == NULL){
+	if(q->size == 0){
 		q->head = n;
 	}
 	else{
@@ -97,24 +98,76 @@ void printQueue(Queue* q){
 	printf("\n");
 }
 
+void setBurst(Proc* proc){
+	proc->io_time = srand((unsigned)time(NULL))%3;
+	proc->cpu_time = srand((unsigned)time(NULL))%10 + 6;
+}
+
 typedef struct msgbuf{
 	long msg_type;
-	char msg_text;
+	pid_t msg_pid;
+	int msg_io_time;
 } msg_buf;
 
 int tick;
 
 void timer_handler(int signum){
 	printf("On time %d\n", ++tick);
+	int i;
+/*
+	if(waitQ->size != 0){
+		for(i = 0; i < waitQ.size; i++){
+			waitQ->head->item.io_time--;
+			
+			if(waitQ->head->item.io_time == 0){
+				setBurst(waitQ->head->item.io_time;
+				enqueue(runQ, dequeue(waitQ));
+			}
+		}
+	}
+
+	if(kill(runQ->head->item.pid, SIGUSR1)==0){
+	
+	}
+*/	
+}
+
+void timer_set(){
+        //setitimer var
+        struct sigaction sa;
+        struct itimerval timer;
+
+        //Install timer_handler as the signal handler for SIGALRM
+        memset(&sa, 0, sizeof(sa));
+        sa.sa_handler = &timer_handler;
+        sigaction(SIGALRM, &sa, NULL);
+
+        //Configure the timer to expire after 250msec
+        timer.it_value.tv_sec = 0;
+        timer.it_value.tv_usec = 10000;
+
+        //and every 250msec after that
+        timer.it_interval.tv_sec = 0;
+        timer.it_interval.tv_usec = 10000;
+
+        //Start a virtual timer. It counts down whenever this process is executing.
+        setitimer(ITIMER_REAL, &timer, NULL);
+	
+}
+void cpu_handle(int signum){
+	
+}
+void io_handle(int signum){
+	
 }
 
 int main(){
 	//msg queue var
 	key_t key_id;
 	int i = 0;
-	msg_buf mybuf, rcvbuf;
+	msg_buf msg, rcvbuf;
 
-	key_id = msgget((key_t)1234, IPC_CREAT|0666);
+	key_id = msgget((key_t)1234, IPC_CREAT|0644);
 
         if(key_id == -1){
                 perror("msgget");
@@ -123,7 +176,7 @@ int main(){
 
 	//procss var
 	int runningProc = 0;
-	pid_t pid;
+	pid_t pid, ppid;
 	Proc* currentProc;
 	
 	int tick = 0;
@@ -131,70 +184,44 @@ int main(){
 	Queue* runQ = createQueue();
 	Queue* waitQ = createQueue();
 	Queue* retireQ = createQueue();	
-	
-	//setitimer var
-	struct sigaction sa;
-	struct itimerval timer;
-	
-	//Install timer_handler as the signal handler for SIGVTALRM
-	memset(&sa, 0, sizeof(sa));
-	sa.sa_handler = &timer_handler;
-	sigaction(SIGALRM, &sa, NULL);
 
-	//Configure the timer to expire after 250msec
-	timer.it_value.tv_sec = 0;
-	timer.it_value.tv_usec = 10000;
-
-	//and every 250msec after that
-	timer.it_interval.tv_sec = 0;
-	timer.it_interval.tv_usec = 10000;
-	
-	//Start a virtual timer. It counts down whenever this process is executing.
-	//setitimer(ITIMER_REAL, &timer, NULL);
-
-	printf("\n");
+	//timer_set();
 
 	Node* temp = (Node*)malloc(sizeof(Node));
 	temp = runQ->head;
-	
-	while(1){
+
+	signal(SIGUSR1, io_handle);
+	signal(SIGUSR2, cpu_handle);
+
 	while(runningProc < TOTALFORK){
 		pid = fork();
-		currentProc = createProc(pid);	
-		if(pid < 0) return -1;
+		
+		if(pid < 0){
+			return -1;
+		}
 		else if(pid == 0){
+			while(1){
+				kill(getpid(), SIGUSR1);
+				kill(getpid(), SIGUSR2);
+			}
 			
-                                /*
-				if(temp->item.cpu_time == 0){
-                                        kill(temp->item.pid, SIGKILL);
-                                }
-				*/
-
-				setitimer(ITIMER_REAL, &timer, NULL);
-				printf("child process %ld\ntime quantum (%d), remaining cpu time (%d)\n", (long)currentProc->pid, i, currentProc->cpu_time);
-
-				printf("run Queue : ");
-				printQueue(runQ);
-				printf("wait Queue : ");
-				printQueue(waitQ);
-				printf("retire Queue : ");
-				printQueue(retireQ);	
-				printf("\n");	
-
-			tick++;
-			i++;
-			currentProc->cpu_time--;
-			exit(0);
+			exit(0)
 		}
-		else{
-			printf("parent process %ld, child process %ld\n", (long)getpid(), (long)currentProc->pid);
+		else{	
+			currentProc = createProc(pid);
+			enqueue(runQ, currentProc);
+			printf("Parent %ld, child %ld\n", (long)getpid(), (long)pid);
+			
+			while(1){
+				kill(pid, SIGUSR2);
+					
+			}	
 		}
-		enqueue(runQ, currentProc);
-		//printQueue(runQ);
-		printf("\n");
 		runningProc++;
-		tick++;
-		}
 	}
+
+	timer_set();
+
+	printQueue(runQ);
 	return 0;
 }
