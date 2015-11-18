@@ -7,6 +7,8 @@
 #include<sys/ipc.h>
 #include<sys/msg.h>
 #include<sys/time.h>
+#include <sched.h>
+#include <string.h>
 
 #define TOTALFORK 10
 #define BUFF_SIZE 1024
@@ -57,6 +59,26 @@ int enqueue(hnode* queue, pid_t new_p) {
 		return 1;
 	}
 }
+
+int run_enqueue(hnode* queue, pid_t new_p) {
+        if (queue == NULL)
+                return 0;
+        else {
+                node* new_node = (node*)malloc(sizeof(node));
+                if (new_node == NULL)
+                        return 0;
+                else {
+                        new_node->pid = new_p;
+                        new_node->next = NULL;
+                }
+                new_node->next = queue->front;
+		queue->front = new_node;
+                (queue->total_count)++;
+        return 1;
+        }
+}
+
+
 pid_t dequeue(hnode* queue) {
 	if (queue == NULL) {
 		return 0;
@@ -124,7 +146,7 @@ void waitqueue() {
 			//printf("%d : io_burst is decreased\n", wait_q->total_count);
 			if (io_time[i] <= 0)
 			{
-				enqueue(run_q, dequeue(wait_q));
+				run_enqueue(run_q, dequeue(wait_q));
 				for (p = 0; p < wait_q->total_count; p++)
 					io_time[p] = io_time[p + 1];
 				//printf("first wait_q go to run_q\n");
@@ -134,7 +156,7 @@ void waitqueue() {
 	}
 }
 
-void time_tick()
+void time_tick(int signo)
 {
 	if (global_time_tick > 1800) {
 		pid_t temp;
@@ -228,6 +250,7 @@ void child_process() {
 
 	struct sigaction cpu_handler;
 	//struct sigaction io_handler;
+	memset(&cpu_handler, 0, sizeof(cpu_handler));
 	cpu_handler.sa_handler = &use_cpu;
 	sigaction(SIGUSR1, &cpu_handler, NULL);
 
@@ -235,7 +258,7 @@ void child_process() {
 	//sigaction(SIGUSR2, &io_handler, NULL);
 
 	while (1) {
-
+		sched_yield();
 	}
 }
 
@@ -281,8 +304,8 @@ int main(int argc, char* argv) {
 	global_time_tick = 0;
 	itimer.it_interval.tv_sec = 0;
 	itimer.it_interval.tv_usec = 100000;
-	itimer.it_value.tv_sec = 0;
-	itimer.it_value.tv_usec = 100000;
+	itimer.it_value.tv_sec = 1;
+	itimer.it_value.tv_usec = 0;
 	setitimer(ITIMER_REAL, &itimer, NULL);
 	while (1) {
 		int ret;
