@@ -48,7 +48,7 @@ int enqueue(hnode* queue, pid_t new_p){
                         new_node->next = NULL;
                 }
                 if(queue->total_count == 0)
-                        queue->front = new_node;
+                        queue->front = queue->rear = new_node;
                 else
                         queue->rear->next = new_node;
                 (queue->total_count)++;
@@ -107,7 +107,7 @@ void printqueue(hnode* queue){
 		fprintf(output_file, "empty\t\tqueue\n");
 	else{
 		node* temp = queue->front;
-		for(a = 0; a < queue->total_count; temp = temp->next)
+		for(a = 0; a < queue->total_count; temp = temp->next, a++)
 			fprintf(output_file, "%d -> ", temp->pid);
 		fprintf(output_file, "\n");
 	}	
@@ -140,14 +140,14 @@ void schedule(){ //
 void waitqueue(){
         if(wait_q->total_count == 0)
         {
-                //printf("wait queue empty!!");
+                //printf("wait queue empty!!\n");
                 return;
         }
         else{
                 int ret, i;
                 msg rmsg;
                 node* temp = wait_q->front;
-                for(i = 0; i < wait_q->total_count; temp = temp->next){
+                for(i = 0; i < wait_q->total_count; temp = temp->next, i++){
                         kill(temp->pid, SIGUSR2);
                         if((ret = msgrcv(key_id, &rmsg, sizeof(msg),2,IPC_NOWAIT))<0)
                                 printf("msgrcv error in waitqueue\n");
@@ -155,37 +155,38 @@ void waitqueue(){
                                 enqueue(run_q, dequeue(wait_q));
                                 printf("child process finish\n");
                         }
-
-						if(temp->next == NULL)
+						if(temp->next == NULL){
+							printf("finish waitqueue\n");
 							break;
+						}						
                 }
         }
 }
 void time_tick()
 {
 	if(global_time_tick > 1800) {
-		pid_t temp;
+		pid_t temp_pid;
 		while(run_q->total_count){
-			temp = dequeue(run_q);
-			kill(temp, SIGKILL);
+			temp_pid = dequeue(run_q);
+			kill(temp_pid, SIGKILL);
                 }
 		while(wait_q->total_count){
-			temp = dequeue(run_q);
-			kill(temp, SIGKILL);
+			temp_pid = dequeue(run_q);
+			kill(temp_pid, SIGKILL);
                 }
                 kill(getpid(), SIGKILL);
                 return;
 	}
+	time_quantum--;
+	
 	schedule();
 	waitqueue();
-	if(time_quantum>0){
-		time_quantum--;
-		kill(run_q->front->pid, SIGUSR1);
-		printf("send signal to %d, remain time quantum: %d\n", run_q->front->pid, time_quantum);
-	}
-	else{
+	
+	kill(run_q->front->pid, SIGUSR1);
+	printf("send signal to %d, remain time quantum: %d\n", run_q->front->pid, time_quantum);
+	if(	time_quantum <= 0 ){
 		time_quantum = 10;
-	}		
+	}	
 	//schedule();
 	global_time_tick++;
 }
@@ -198,13 +199,14 @@ void use_cpu(int signo){
 	if(*cpu_bust <= 0){
 		printf("finish cpu bust\n");
 		msg cmsg;
-		//if((key_id = msgget((key_t)2194, IPC_CREAT|0666)) < 0)
-		//	printf("msgget error int use_cpu\n");
+		key_t msg_key;
+		if((msg_key = msgget((key_t)2194, IPC_CREAT|0666)) < 0)
+			printf("msgget error int use_cpu\n");
 		cmsg.mtype = 1;
 		cmsg.pid = getpid();
 		cmsg.io_time = (*io_bust);
-		msgsnd(key_id, &cmsg, sizeof(msg), IPC_NOWAIT);
-		return;
+		msgsnd(msg_key, &cmsg, sizeof(msg), IPC_NOWAIT);
+		//msgsnd(key_id, &cmsg, sizeof(msg), IPC_NOWAIT);
 	}
 }
 void use_io(int signo){
@@ -215,15 +217,17 @@ void use_io(int signo){
 
     if((*io_bust) <= 0){
 		msg smsg;
+		key_t imsg_key;
+		if((imsg_key = msgget((key_t)2194, IPC_CREAT|0666)) < 0)
+			printf("msgget error int use_cpu\n");
 		smsg.mtype = 2;
 	    smsg.pid = getpid();
-		msgsnd(key_id, &smsg, sizeof(msg), IPC_NOWAIT);
+		msgsnd(imsg_key, &smsg, sizeof(msg), IPC_NOWAIT);
+		//msgsnd(key_id, &smsg, sizeof(msg), IPC_NOWAIT);
 
 		srand(time(NULL)+getpid());
 		*cpu_bust = rand() % 30;
 		*io_bust = rand() % 10;
-
-		return;
 	}	
 }
 
